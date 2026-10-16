@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Topstep Word Search</title>
+<style>
+:root{--navy:#101a2c;--blue:#2374e1;--ink:#172235;--muted:#637087;--line:#dbe2eb;--bg:#f4f7fb;--gold:#f4c95d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 Inter,system-ui,-apple-system,Segoe UI,sans-serif}
+header{background:var(--navy);color:white;padding:28px 18px 24px;text-align:center;border-bottom:5px solid var(--blue)}
+.kicker{font-size:.75rem;letter-spacing:.2em;font-weight:800;color:var(--gold)}h1{margin:6px 0;font-size:clamp(1.7rem,5vw,2.6rem);letter-spacing:.04em}header p{margin:4px auto 0;color:#d7dfed;max-width:600px}
+main{max-width:1050px;margin:24px auto;padding:0 16px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:14px}.stats{display:flex;gap:10px;flex-wrap:wrap}.stat{background:white;border:1px solid var(--line);border-radius:12px;padding:10px 14px;min-width:100px}.stat strong{display:block;font-size:1.25rem}.stat span{font-size:.75rem;color:var(--muted)}
+button{border:0;border-radius:10px;padding:11px 15px;background:var(--blue);color:white;font-weight:750;cursor:pointer}button.secondary{background:white;color:var(--ink);border:1px solid var(--line)}
+.layout{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(220px,.8fr);gap:16px;align-items:start}.panel{background:white;border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 4px 16px #12233a08}.panel h2{margin:0 0 5px;font-size:1rem}.hint{color:var(--muted);font-size:.85rem;margin:0 0 14px}
+#grid{display:grid;grid-template-columns:repeat(15,minmax(0,1fr));gap:3px;user-select:none;touch-action:none}
+.cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border:1px solid #e3e9f1;border-radius:5px;background:#fbfcfe;font-size:clamp(.55rem,1.8vw,.95rem);font-weight:800;cursor:crosshair;min-width:0;padding:0;color:#26364d}
+.cell.preview{background:#dbeafe;border-color:#76a7f4}.cell.found{background:#c9f3df;border-color:#5bb98b;color:#145b3c}.cell.found.preview{background:#c9f3df}
+.words{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.word{padding:8px 9px;border:1px solid var(--line);border-radius:9px;font-size:.78rem;font-weight:750;letter-spacing:.04em}.word.done{text-decoration:line-through;color:#278057;background:#effbf4;border-color:#b7e4c9}
+.note{margin-top:14px;padding:12px;border-radius:10px;background:#f3f7ff;color:#39516f;font-size:.85rem}.status{font-weight:750;min-height:1.5em;margin-top:10px;color:#24734c}.footer{text-align:center;color:var(--muted);font-size:.78rem;margin:18px 0 28px}
+@media(max-width:720px){.layout{grid-template-columns:1fr}.panel{padding:12px}#grid{gap:2px}.cell{border-radius:3px}.toolbar{align-items:flex-start}}
+</style>
+</head>
+<body>
+<header><div class="kicker">TRADING • DISCIPLINE • CONSISTENCY</div><h1>TOPSTEP WORD SEARCH</h1><p>Find the trading terms hidden in the grid. Click and drag from the first letter to the last.</p></header>
+<main>
+<div class="toolbar"><div class="stats"><div class="stat"><strong id="foundCount">0 / 15</strong><span>WORDS FOUND</span></div><div class="stat"><strong id="timer">00:00</strong><span>TIME ELAPSED</span></div></div><div><button id="reset" class="secondary">Restart puzzle</button></div></div>
+<div class="layout"><section class="panel"><h2>The puzzle</h2><p class="hint">Words can go across, down, or diagonally — forwards or backwards.</p><div id="grid" aria-label="Word search letter grid"></div><div class="status" id="status" role="status"></div></section>
+<aside class="panel"><h2>Word bank</h2><p class="hint">Each word turns green when you find it.</p><div id="words" class="words"></div><div class="note"><strong>How to play</strong><br>1. Press on a letter.<br>2. Drag in a straight line to the final letter.<br>3. Release to submit your selection.<br><br>Play on your own computer. Your time and progress stay in this browser tab and are not sent to anyone.</div></aside></div>
+<div class="footer">A team game for Topstep • Individual play • No sign-in required</div>
+</main>
+<script>
+const WORDS=["TOPSTEP","TOPSTEPX","TRADER","TRADING","FUTURES","MARKET","RISK","PROFIT","PAYOUT","RESET","COACH","EXPRESS","POSITION","DISCIPLINE","CONSISTENCY"];
+const N=15, dirs=[[0,1],[1,0],[1,1],[1,-1],[0,-1],[-1,0],[-1,-1],[-1,1]];
+let board, placements, found, startCell=null, currentPreview=[], dragging=false, startTime=Date.now(), timerInterval;
+const gridEl=document.getElementById('grid'), wordsEl=document.getElementById('words');
+function makePuzzle(){
+ board=Array.from({length:N},()=>Array(N).fill('')); placements={};
+ const sorted=[...WORDS].sort((a,b)=>b.length-a.length);
+ for(const word of sorted){
+  let placed=false;
+  for(let attempt=0;attempt<2500&&!placed;attempt++){
+   const [dr,dc]=dirs[Math.floor(Math.random()*dirs.length)];
+   const r=Math.floor(Math.random()*N),c=Math.floor(Math.random()*N);
+   const er=r+dr*(word.length-1),ec=c+dc*(word.length-1);
+   if(er<0||er>=N||ec<0||ec>=N)continue;
+   let ok=true;
+   for(let i=0;i<word.length;i++){const x=board[r+dr*i][c+dc*i];if(x&&x!==word[i]){ok=false;break}}
+   if(!ok)continue;
+   const cells=[];for(let i=0;i<word.length;i++){let rr=r+dr*i,cc=c+dc*i;board[rr][cc]=word[i];cells.push(rr*N+cc)}
+   placements[word]=cells;placed=true;
+  }
+  if(!placed)throw Error('Could not place '+word);
+ }
+ for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(!board[r][c])board[r][c]='ABCDEFGHIJKLMNOPQRSTUVWXYZ'[Math.floor(Math.random()*26)];
+ found=new Set();startCell=null;currentPreview=[];dragging=false;startTime=Date.now();
+ render();
+ clearInterval(timerInterval);timerInterval=setInterval(updateTimer,1000);updateTimer();
+}
+function render(){
+ gridEl.innerHTML='';wordsEl.innerHTML='';
+ for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+  const el=document.createElement('button');el.type='button';el.className='cell';el.textContent=board[r][c];el.dataset.index=r*N+c;el.setAttribute('aria-label',board[r][c]);
+  el.addEventListener('pointerdown',e=>{e.preventDefault();dragging=true;startCell=+el.dataset.index;previewTo(+el.dataset.index);});
+  el.addEventListener('pointerenter',()=>{if(dragging)previewTo(+el.dataset.index)});
+  el.addEventListener('click',()=>{if(!matchMedia('(pointer: coarse)').matches)return;if(startCell===null){startCell=+el.dataset.index;previewTo(startCell)}else{previewTo(+el.dataset.index);submitSelection();}});
+  gridEl.appendChild(el);
+ }
+ for(const w of WORDS){const el=document.createElement('div');el.className='word';el.id='word-'+w;el.textContent=w;wordsEl.appendChild(el)}
+ document.addEventListener('pointerup',onPointerUp);
+ updateCells();updateCounts();document.getElementById('status').textContent='';
+}
+function lineCells(a,b){
+ const r1=Math.floor(a/N),c1=a%N,r2=Math.floor(b/N),c2=b%N,dr=r2-r1,dc=c2-c1;
+ if(dr!==0&&dc!==0&&Math.abs(dr)!==Math.abs(dc))return [];
+ const steps=Math.max(Math.abs(dr),Math.abs(dc));if(steps===0)return [a];
+ const sr=Math.sign(dr),sc=Math.sign(dc),out=[];for(let i=0;i<=steps;i++)out.push((r1+sr*i)*N+(c1+sc*i));return out;
+}
+function previewTo(end){if(startCell===null)return;currentPreview=lineCells(startCell,end);updateCells()}
+function updateCells(){
+ document.querySelectorAll('.cell').forEach(el=>{const i=+el.dataset.index;el.classList.toggle('found',[...found].some(w=>placements[w].includes(i)));el.classList.toggle('preview',currentPreview.includes(i))});
+}
+function submitSelection(){
+ if(!currentPreview.length)return;
+ const str=currentPreview.map(i=>board[Math.floor(i/N)][i%N]).join('');
+ const rev=str.split('').reverse().join('');
+ const word=WORDS.find(w=>(w===str||w===rev)&&!found.has(w));
+ if(word){found.add(word);document.getElementById('word-'+word).classList.add('done');document.getElementById('status').textContent='Nice! You found '+word+'.';}
+ else if(currentPreview.length>1){document.getElementById('status').textContent='Not a word on the list — try again!';}
+ currentPreview=[];startCell=null;dragging=false;updateCells();updateCounts();
+ if(found.size===WORDS.length){clearInterval(timerInterval);document.getElementById('status').textContent='🏆 You found every word in '+document.getElementById('timer').textContent+'!';}
+}
+function onPointerUp(){if(dragging){dragging=false;submitSelection()}}
+function updateCounts(){document.getElementById('foundCount').textContent=found.size+' / '+WORDS.length}
+function updateTimer(){let s=Math.floor((Date.now()-startTime)/1000);document.getElementById('timer').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
+document.getElementById('reset').addEventListener('click',makePuzzle);
+makePuzzle();
+</script>
+</body></html>
